@@ -1,0 +1,759 @@
+Create MySQL Database Table
+CREATE TABLE `user` (
+  `id` int(11) NOT NULL,
+  `first_name` varchar(50) NOT NULL,
+  `last_name` varchar(50) NOT NULL,
+  `email` varchar(50) NOT NULL,
+  `password` varchar(50) NOT NULL,
+  `gender` enum('male','female') CHARACTER SET utf8 NOT NULL,
+  `mobile` varchar(50) NOT NULL,
+  `designation` varchar(50) NOT NULL,
+  `image` varchar(250) NOT NULL,
+  `type` varchar(250) NOT NULL DEFAULT 'general',
+  `status` enum('active','pending','deleted','') NOT NULL DEFAULT 'pending',
+  `authtoken` varchar(250) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+2.Implement User Registration
+
+<div id="signupbox" class="col-md-7">
+  <div class="panel panel-info">
+    <div class="panel-heading">
+      <div class="panel-title">Sign Up</div>        
+    </div>  
+    <div class="panel-body" >
+      <form id="signupform" class="form-horizontal" role="form" method="POST" action="">        
+        <?php if ($message != '') { ?>
+          <div id="login-alert" class="alert alert-danger col-sm-12"><?php echo $message; ?></div>                            
+        <?php } ?>  
+        <div class="form-group">
+          <label for="firstname" class="col-md-3 control-label">First Name*</label>
+          <div class="col-md-9">
+            <input type="text" class="form-control" name="firstname" placeholder="First Name" value="<?php if(!empty($_POST["firstname"])) { echo $_POST["firstname"]; } ?>" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="lastname" class="col-md-3 control-label">Last Name</label>
+          <div class="col-md-9">
+            <input type="text" class="form-control" name="lastname" placeholder="Last Name" value="<?php if(!empty($_POST["lastname"])) { echo $_POST["lastname"]; } ?>" >
+          </div>
+        </div>          
+        <div class="form-group">
+          <label for="email" class="col-md-3 control-label">Email*</label>
+          <div class="col-md-9">
+            <input type="email" class="form-control" name="email" placeholder="Email Address" value="<?php if(!empty($_POST["email"])) { echo $_POST["email"]; } ?>" required>
+          </div>
+        </div>          
+        <div class="form-group">
+          <label for="password" class="col-md-3 control-label">Password*</label>
+          <div class="col-md-9">
+            <input type="password" class="form-control" name="passwd" placeholder="Password" required>
+          </div>
+        </div>                
+        <div class="form-group">                                              
+          <div class="col-md-offset-3 col-md-9">
+            <button id="btn-signup" type="submit" name="register" value="register" class="btn btn-info"><i class="icon-hand-right"></i>   Register</button>     
+          </div>
+        </div>          
+        <div class="form-group">
+          <div class="col-md-12 control">
+            <div style="border-top: 1px solid#888; padding-top:15px; font-size:85%" >
+              If You've already an account! 
+            <a href="login.php">
+              Log In 
+            </a>Here
+            </div>
+          </div>
+        </div>          
+      </form>
+     </div>
+  </div>
+</div>  
+
+public function register(){   
+  $message = '';
+  if(!empty($_POST["register"]) && $_POST["email"] !='') {
+    $sqlQuery = "SELECT * FROM ".$this->userTable." 
+      WHERE email='".$_POST["email"]."'";
+    $result = mysqli_query($this->dbConnect, $sqlQuery);
+    $isUserExist = mysqli_num_rows($result);
+    if($isUserExist) {
+      $message = "User already exist with this email address.";
+    } else {      
+      $authtoken = $this->getAuthtoken($_POST["email"]);
+      $insertQuery = "INSERT INTO ".$this->userTable."(first_name, last_name, email, password, authtoken) 
+      VALUES ('".$_POST["firstname"]."', '".$_POST["lastname"]."', '".$_POST["email"]."', '".md5($_POST["passwd"])."', '".$authtoken."')";
+      $userSaved = mysqli_query($this->dbConnect, $insertQuery);
+      if($userSaved) {        
+        $link = "<a href='http://example.com/user-management-system/verify.php?authtoken=".$authtoken."'>Verify Email</a>";     
+        $toEmail = $_POST["email"];
+        $subject = "Verify email to complete registration";
+        $msg = "Hi there, click on this ".$link." to verify email to complete registration.";
+        $msg = wordwrap($msg,70);
+        $headers = "From: info@webdamn.com";
+        if(mail($toEmail, $subject, $msg, $headers)) {
+          $message = "Verification email send to your email address. Please check email and verify to complete registration.";
+        }
+      } else {
+        $message = "User register request failed.";
+      }
+    }
+  }
+  return $message;
+} 
+
+ublic function verifyRegister(){
+  $verifyStatus = 0;
+  if(!empty($_GET["authtoken"]) && $_GET["authtoken"] != '') {      
+    $sqlQuery = "SELECT * FROM ".$this->userTable." 
+      WHERE authtoken='".$_GET["authtoken"]."'";
+    $resultSet = mysqli_query($this->dbConnect, $sqlQuery);
+    $isValid = mysqli_num_rows($resultSet); 
+    if($isValid){
+      $userDetails = mysqli_fetch_assoc($resultSet);
+      $authtoken = $this->getAuthtoken($userDetails['email']);
+      if($authtoken == $_GET["authtoken"]) {          
+        $updateQuery = "UPDATE ".$this->userTable." SET status = 'active'
+          WHERE id='".$userDetails['id']."'";
+        $isUpdated = mysqli_query($this->dbConnect, $updateQuery);          
+        if($isUpdated) {
+          $verifyStatus = 1;
+        }
+      }
+    }
+  }
+  return $verifyStatus;
+} 
+
+3: Implement User Login
+<div class="col-md-6">                    
+  <div class="panel panel-info" >
+    <div class="panel-heading">
+      <div class="panel-title">Log In</div>                        
+    </div> 
+    <div style="padding-top:30px" class="panel-body" >
+      <?php if ($errorMessage != '') { ?>
+        <div id="login-alert" class="alert alert-danger col-sm-12"><?php echo $errorMessage; ?></div>                            
+      <?php } ?>
+      <form id="loginform" class="form-horizontal" role="form" method="POST" action="">                                    
+        <div style="margin-bottom: 25px" class="input-group">
+          <span class="input-group-addon"><i class="glyphicon glyphicon-user"></i></span>
+          <input type="text" class="form-control" id="loginId" name="loginId"  value="<?php if(isset($_COOKIE["loginId"])) { echo $_COOKIE["loginId"]; } ?>" placeholder="email">                                        
+        </div>                                
+        <div style="margin-bottom: 25px" class="input-group">
+          <span class="input-group-addon"><i class="glyphicon glyphicon-lock"></i></span>
+          <input type="password" class="form-control" id="loginPass" name="loginPass" value="<?php if(isset($_COOKIE["loginPass"])) { echo $_COOKIE["loginPass"]; } ?>" placeholder="password">
+        </div>            
+        <div class="input-group">
+          <div class="checkbox">
+          <label>
+            <input  type="checkbox" id="remember" name="remember" <?php if(isset($_COOKIE["loginId"])) { ?> checked <?php } ?>> Remember me
+          </label>
+          <label><a href="forget_password.php">Forget your password</a></label> 
+          </div>
+        </div>
+        <div style="margin-top:10px" class="form-group">                               
+          <div class="col-sm-12 controls">
+            <input type="submit" name="login" value="Login" class="btn btn-info">             
+          </div>            
+        </div>
+         <div class="form-group">
+          <div class="col-md-12 control">
+            <div style="border-top: 1px solid#888; padding-top:15px; font-size:85%" >
+              Don't have an account! 
+            <a href="register.php">
+              Register 
+            </a>Here. 
+            </div>
+          </div>
+        </div>      
+      </form>   
+    </div>                     
+  </div>  
+</div>
+
+public function login(){    
+  $errorMessage = '';
+  if(!empty($_POST["login"]) && $_POST["loginId"]!=''&& $_POST["loginPass"]!='') {  
+    $loginId = $_POST['loginId'];
+    $password = $_POST['loginPass'];
+    if(isset($_COOKIE["loginPass"]) && $_COOKIE["loginPass"] == $password) {
+      $password = $_COOKIE["loginPass"];
+    } else {
+      $password = md5($password);
+    } 
+    $sqlQuery = "SELECT * FROM ".$this->userTable." 
+      WHERE email='".$loginId."' AND password='".$password."' AND status = 'active'";
+    $resultSet = mysqli_query($this->dbConnect, $sqlQuery);
+    $isValidLogin = mysqli_num_rows($resultSet);  
+    if($isValidLogin){
+      if(!empty($_POST["remember"]) && $_POST["remember"] != '') {
+        setcookie ("loginId", $loginId, time()+ (10 * 365 * 24 * 60 * 60));  
+        setcookie ("loginPass", $password,  time()+ (10 * 365 * 24 * 60 * 60));
+      } else {
+        $_COOKIE['loginId' ]='';
+        $_COOKIE['loginPass'] = '';
+      }
+      $userDetails = mysqli_fetch_assoc($resultSet);
+      $_SESSION["userid"] = $userDetails['id'];
+      $_SESSION["name"] = $userDetails['first_name']." ".$userDetails['last_name'];
+      header("location: index.php");    
+    } else {    
+      $errorMessage = "Invalid login!";    
+    }
+  } else if(!empty($_POST["loginId"])){
+    $errorMessage = "Enter Both user and password!";  
+  }
+  return $errorMessage;     
+}
+
+4: Implement User Password Reset
+
+<div class="col-md-6">                    
+  <div class="panel panel-info" >
+    <div class="panel-heading">
+      <div class="panel-title">Reset Password</div>                        
+    </div> 
+    <div style="padding-top:30px" class="panel-body" >
+      <?php if ($errorMessage != '') { ?>
+        <div id="login-alert" class="alert alert-danger col-sm-12"><?php echo $errorMessage; ?></div>                            
+      <?php } ?>
+      <?php if(!empty($_GET['authtoken']) && $_GET['authtoken']) { ?>
+        <form id="loginform" class="form-horizontal" role="form" method="POST" action="">                                    
+          <div style="margin-bottom: 25px" class="input-group">
+            <span class="input-group-addon"><i class="glyphicon glyphicon-user"></i></span>
+            <input type="password" class="form-control" id="password" name="password"  placeholder="New password..." required>      
+          </div>
+          <div style="margin-bottom: 25px" class="input-group">
+            <span class="input-group-addon"><i class="glyphicon glyphicon-user"></i></span>
+            <input type="password" class="form-control" id="cpassword" name="cpassword"  placeholder="Confirm password..." required>              
+          </div>  
+          <div style="margin-top:10px" class="form-group">                               
+            <div class="col-sm-12 controls">
+              <input type="hidden" name="authtoken"  value="<?php echo $_GET['authtoken']; ?>" />
+              <input type="submit" name="resetpassword" value="Save" class="btn btn-info">              
+            </div>            
+          </div>           
+          </div>    
+        </form>
+      <?php } else { ?>
+        Invalid password reset request.
+      <?php } ?>
+    </div>                     
+  </div>  
+</div>
+
+public function resetPassword(){
+  $message = '';
+  if($_POST['email'] == '') {
+    $message = "Please enter username or email to proceed with password reset";     
+  } else {
+    $sqlQuery = "
+      SELECT email 
+      FROM ".$this->userTable." 
+      WHERE email='".$_POST['email']."'";     
+    $result = mysqli_query($this->dbConnect, $sqlQuery);
+    $numRows = mysqli_num_rows($result);
+    if($numRows) {      
+      $user = mysqli_fetch_assoc($result);
+      $authtoken = $this->getAuthtoken($user['email']);
+      $link="<a href='https://www.webdamn.com/demo/user-management-system/reset_password.php?authtoken=".$authtoken."'>Reset Password</a>";       
+      $toEmail = $user['email'];
+      $subject = "Reset your password on examplesite.com";
+      $msg = "Hi there, click on this ".$link." to reset your password.";
+      $msg = wordwrap($msg,70);
+      $headers = "From: info@webdamn.com";
+      if(mail($toEmail, $subject, $msg, $headers)) {
+        $message =  "Password reset link send. Please check your mailbox to reset password.";
+      }       
+    } else {
+      $message = "No account exist with entered email address.";
+    }
+  }
+  return $message;
+}
+public function savePassword(){
+  $message = '';
+  if($_POST['password'] != $_POST['cpassword']) {
+    $message = "Password does not match the confirm password.";
+  } else if($_POST['authtoken']) {
+    $sqlQuery = "
+      SELECT email, authtoken 
+      FROM ".$this->userTable." 
+      WHERE authtoken='".$_POST['authtoken']."'";     
+    $result = mysqli_query($this->dbConnect, $sqlQuery);
+    $numRows = mysqli_num_rows($result);
+    if($numRows) {        
+      $userDetails = mysqli_fetch_assoc($result);
+      $authtoken = $this->getAuthtoken($userDetails['email']);
+      if($authtoken == $_POST['authtoken']) {
+        $sqlUpdate = "
+          UPDATE ".$this->userTable." 
+          SET password='".md5($_POST['password'])."'
+          WHERE email='".$userDetails['email']."' AND authtoken='".$authtoken."'";  
+        $isUpdated = mysqli_query($this->dbConnect, $sqlUpdate);  
+        if($isUpdated) {
+          $message = "Password saved successfully. Please <a href='login.php'>Login</a> to access account.";
+        }
+      } else {
+        $message = "Invalid password change request.";
+      }
+    } else {
+      $message = "Invalid password change request.";
+    } 
+  }
+  return $message;
+}
+<div class="panel">
+  <div class="panel-heading">
+    <div class="panel-title">Edit Account Details</div>       
+  </div>  
+  <div class="panel-body col-md-7">
+    <form class="form-horizontal" role="form" method="POST" action="">        
+      <?php if($message != '') { ?>
+        <div id="login-alert" class="alert alert-danger col-sm-12"><?php echo $message; ?></div>                            
+      <?php } ?>  
+      <div class="form-group">
+        <label for="firstname" class="col-md-3 control-label">First Name*</label>
+        <div class="col-md-9">
+          <input type="text" class="form-control" name="firstname" placeholder="First Name" value="<?php echo $userDetail['first_name'];?>" >
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="lastname" class="col-md-3 control-label">Last Name</label>
+        <div class="col-md-9">
+          <input type="text" class="form-control" name="lastname" placeholder="Last Name" value="<?php echo $userDetail['last_name'];?>" >
+        </div>
+      </div>          
+      <div class="form-group">
+        <label for="email" class="col-md-3 control-label">Email*</label>
+        <div class="col-md-9">
+          <input type="email" class="form-control" name="email" placeholder="Email Address" value="<?php echo $userDetail['email'];?>" required>
+        </div>
+      </div>  
+      <div class="form-group">
+        <label for="email" class="col-md-3 control-label">Mobile</label>
+        <div class="col-md-9">
+          <input type="text" class="form-control" name="mobile" placeholder="Mobile" value="<?php echo $userDetail['mobile'];?>" >
+        </div>
+      </div>  
+      <div class="form-group">
+        <label for="lastname" class="col-md-3 control-label">Designation</label>
+        <div class="col-md-9">
+          <input type="text" class="form-control" name="designation" placeholder="Designation" value="<?php echo $userDetail['designation'];?>" >
+        </div>
+      </div>  
+      <div class="form-group">
+        <label for="gender" class="col-md-3 control-label">Gender</label>
+        <div class="col-md-9">
+          <label class="radio-inline">
+            <input type="radio" name="gender" value="male" <?php if($userDetail['gender'] == 'male') { echo 'checked'; } ?> required>Male
+          </label>;
+          <label class="radio-inline">
+            <input type="radio" name="gender" value="female" <?php if($userDetail['gender'] == 'female') { echo 'checked'; } ?> required>Female
+          </label>
+        </div>
+      </div>  
+      <div class="form-group">
+        <label for="password" class="col-md-3 control-label">Password</label>
+        <div class="col-md-9">
+          <input type="password" class="form-control" name="passwd" placeholder="Password" value="">
+        </div>
+      </div>  
+      <div class="form-group">
+        <label for="password" class="col-md-3 control-label">Confirm Password</label>
+        <div class="col-md-9">
+          <input type="password" class="form-control" name="cpasswd" placeholder="Confirm Password" value="">
+        </div>
+      </div>            
+      <div class="form-group">                                              
+        <div class="col-md-offset-3 col-md-9">
+          <button id="btn-signup" type="submit" name="update" value="update_account" class="btn btn-info"><i class="icon-hand-right"></i>   Save Changes</button>     
+        </div>
+      </div>              
+    </form>
+   </div>
+</div>
+</div>  
+
+public function editAccount () {
+  $message = '';
+  $updatePassword = '';
+  if(!empty($_POST["passwd"]) && $_POST["passwd"] != '' && $_POST["passwd"] != $_POST["cpasswd"]) {
+    $message = "Confirm passwords do not match.";
+  } else if(!empty($_POST["passwd"]) && $_POST["passwd"] != '' && $_POST["passwd"] == $_POST["cpasswd"]) {
+    $updatePassword = ", password='".md5($_POST["passwd"])."' ";
+  }   
+  $updateQuery = "UPDATE ".$this->userTable." 
+    SET first_name = '".$_POST["firstname"]."', last_name = '".$_POST["lastname"]."', email = '".$_POST["email"]."', mobile = '".$_POST["mobile"]."' , designation = '".$_POST["designation"]."', gender = '".$_POST["gender"]."' $updatePassword
+    WHERE id ='".$_SESSION["userid"]."'";
+  $isUpdated = mysqli_query($this->dbConnect, $updateQuery);  
+  if($isUpdated) {
+    $_SESSION["name"] = $_POST['firstname']." ".$_POST['lastname'];
+    $message = "Account details saved.";
+  }
+  return $message;
+} 
+6: Implement Admin Login
+
+<div class="col-md-6">                    
+  <div class="panel panel-info">
+    <div class="panel-heading" style="background:#00796B;color:white;">
+      <div class="panel-title">Admin In</div>                        
+    </div> 
+    <div style="padding-top:30px" class="panel-body" >
+      <?php if ($errorMessage != '') { ?>
+        <div id="login-alert" class="alert alert-danger col-sm-12"><?php echo $errorMessage; ?></div>                            
+      <?php } ?>
+      <form id="loginform" class="form-horizontal" role="form" method="POST" action="">                                    
+        <div style="margin-bottom: 25px" class="input-group">
+          <span class="input-group-addon"><i class="glyphicon glyphicon-user"></i></span>
+          <input type="text" class="form-control" id="email" name="email" placeholder="email" style="background:white;" required>                                        
+        </div>                                
+        <div style="margin-bottom: 25px" class="input-group">
+          <span class="input-group-addon"><i class="glyphicon glyphicon-lock"></i></span>
+          <input type="password" class="form-control" id="password" name="password"placeholder="password" required>
+        </div>
+        <div style="margin-top:10px" class="form-group">                               
+          <div class="col-sm-12 controls">
+            <input type="submit" name="login" value="Login" class="btn btn-info">             
+          </div>            
+        </div>  
+        <div style="margin-top:10px" class="form-group">                               
+          <div class="col-sm-12 controls">
+          User: admin@webdamn.com<br>
+          password:123          
+          </div>            
+        </div>  
+      </form>   
+    </div>                     
+  </div>  
+</div>
+public function adminLogin(){   
+  $errorMessage = '';
+  if(!empty($_POST["login"]) && $_POST["email"]!=''&& $_POST["password"]!='') { 
+    $email = $_POST['email'];
+    $password = $_POST['password'];
+    $sqlQuery = "SELECT * FROM ".$this->userTable." 
+      WHERE email='".$email."' AND password='".md5($password)."' AND status = 'active' AND type = 'administrator'";
+    $resultSet = mysqli_query($this->dbConnect, $sqlQuery);
+    $isValidLogin = mysqli_num_rows($resultSet);  
+    if($isValidLogin){
+      $userDetails = mysqli_fetch_assoc($resultSet);
+      $_SESSION["adminUserid"] = $userDetails['id'];
+      $_SESSION["admin"] = $userDetails['first_name']." ".$userDetails['last_name'];
+      header("location: dashboard.php");    
+    } else {    
+      $errorMessage = "Invalid login!";    
+    }
+  } else if(!empty($_POST["login"])){
+    $errorMessage = "Enter Both user and password!";  
+  }
+  return $errorMessage;     
+}
+<div class="col-lg-10 col-md-10 col-sm-9 col-xs-12">   
+  <a href="#"><strong><span class="fa fa-dashboard"></span> My Dashboard</strong></a>
+  <hr>    
+  <div class="row">
+    <div class="col-md-12">
+      <div class="row">
+        <div class="col-md-3">
+          <div class="panel panel-default">
+            <div class="panel-body bk-primary text-light">
+              <div class="stat-panel text-center">
+                <div class="stat-panel-number h1 "><?php echo $user->totalUsers(""); ?></div>
+                <div class="stat-panel-title text-uppercase">Total Users</div>
+              </div>
+            </div>                      
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="panel panel-default">
+            <div class="panel-body bk-success text-light">
+              <div class="stat-panel text-center">
+                <div class="stat-panel-number h1 "><?php echo $user->totalUsers('active'); ?></div>
+                <div class="stat-panel-title text-uppercase">Total Active Users</div>
+              </div>
+            </div>                      
+          </div>
+        </div>    
+        <div class="col-md-3">
+          <div class="panel panel-default">
+            <div class="panel-body bk-success text-light">
+              <div class="stat-panel text-center">
+                <div class="stat-panel-number h1 "><?php echo $user->totalUsers('pending'); ?></div>
+                <div class="stat-panel-title text-uppercase">Total Pending Users</div>
+              </div>
+            </div>                      
+          </div>
+        </div>                          
+        <div class="col-md-3">
+          <div class="panel panel-default">
+            <div class="panel-body bk-danger text-light">
+              <div class="stat-panel text-center">                        
+                <div class="stat-panel-number h1 "><?php echo $user->totalUsers('deleted'); ?></div>
+                <div class="stat-panel-title text-uppercase">Total Deleted Users</div>
+              </div>
+            </div>                      
+          </div>
+        </div>              
+      </div>
+    </div>
+  </div>    
+</div>
+8: Manage User in Admin Panel
+<div class="col-lg-10 col-md-10 col-sm-9 col-xs-12">   
+  <a href="#"><strong><span class="fa fa-dashboard"></span> User List</strong></a>
+  <hr>    
+  <div class="panel-heading">
+    <div class="row">
+      <div class="col-md-10">
+        <h3 class="panel-title"></h3>
+      </div>
+      <div class="col-md-2" align="right">
+        <button type="button" name="add" id="addUser" class="btn btn-success btn-xs">Add</button>
+      </div>
+    </div>
+  </div>
+  <table id="userList" class="table table-bordered table-striped">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Name</th>
+        <th>Gender</th>
+        <th>Email</th>
+        <th>Mobile</th>
+        <th>Role</th>         
+        <th></th>
+        <th></th>
+        <th></th>
+      </tr>
+    </thead>
+  </table>
+</div>
+<div id="userModal" class="modal fade">
+  <div class="modal-dialog">
+    <form method="post" id="userForm">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal">×</button>
+          <h4 class="modal-title"><i class="fa fa-plus"></i> Edit User</h4>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="firstname" class="control-label">First Name*</label>
+            <input type="text" class="form-control" id="firstname" name="firstname" placeholder="First Name" required>              
+          </div>
+          <div class="form-group">
+            <label for="lastname" class="control-label">Last Name</label>             
+            <input type="text" class="form-control" id="lastname" name="lastname" placeholder="Last Name">              
+          </div>      
+          <div class="form-group">
+            <label for="lastname" class="control-label">Email*</label>              
+            <input type="text" class="form-control"  id="email" name="email" placeholder="Email" required>              
+          </div>   
+          <div class="form-group" id="passwordSection">
+            <label for="lastname" class="control-label">Password*</label>             
+            <input type="password" class="form-control"  id="password" name="password" placeholder="Password" required>             
+          </div>
+          <div class="form-group">
+            <label for="gender" class="control-label">Gender</label>              
+            <label class="radio-inline">
+              <input type="radio" name="gender" id="male" value="male" required>Male
+            </label>;
+            <label class="radio-inline">
+              <input type="radio" name="gender" id="female" value="female" required>Female
+            </label>              
+          </div>  
+          <div class="form-group">
+            <label for="lastname" class="control-label">Mobile</label>              
+            <input type="text" class="form-control" id="mobile" name="mobile" placeholder="Mobile">             
+          </div>   
+          <div class="form-group">
+            <label for="lastname" class="control-label">Designation</label>             
+            <input type="text" class="form-control" id="designation" name="designation" placeholder="designation">              
+          </div>  
+          <div class="form-group">
+            <label for="gender" class="control-label">Status</label>              
+            <label class="radio-inline">
+              <input type="radio" name="status" id="active" value="active" required>Active
+            </label>;
+            <label class="radio-inline">
+              <input type="radio" name="status" id="pending" value="pending" required>Pending
+            </label>              
+          </div>
+          <div class="form-group">
+            <label for="user_type" class="control-label">User Type</label>              
+            <label class="radio-inline">
+              <input type="radio" name="user_type" id="general" value="general" required>General
+            </label>;
+            <label class="radio-inline">
+              <input type="radio" name="user_type" id="administrator" value="administrator" required>Administrator
+            </label>              
+          </div>  
+        </div>
+        <div class="modal-footer">
+          <input type="hidden" name="userid" id="userid" />
+          <input type="hidden" name="action" id="action" value="updateUser" />
+          <input type="submit" name="save" id="save" class="btn btn-info" value="Save" />
+          <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+$(document).ready(function(){
+  var usersData = $('#userList').DataTable({
+    "lengthChange": false,
+    "processing":true,
+    "serverSide":true,
+    "order":[],
+    "ajax":{
+      url:"action.php",
+      type:"POST",
+      data:{action:'listUser'},
+      dataType:"json"
+    },
+    "columnDefs":[
+      {
+        "targets":[0, 7, 8],
+        "orderable":false,
+      },
+    ],
+    "pageLength": 10
+  });   
+  $(document).on('click', '.delete', function(){
+    var userid = $(this).attr("id");    
+    var action = "userDelete";
+    if(confirm("Are you sure you want to delete this user?")) {
+      $.ajax({
+        url:"action.php",
+        method:"POST",
+        data:{userid:userid, action:action},
+        success:function(data) {          
+          usersData.ajax.reload();
+        }
+      })
+    } else {
+      return false;
+    }
+  }); 
+  $('#addUser').click(function(){
+    $('#userModal').modal('show');
+    $('#userForm')[0].reset();
+    $('#passwordSection').show();
+    $('.modal-title').html("<i class='fa fa-plus'></i> Add User");
+    $('#action').val('addUser');
+    $('#save').val('Add User');
+  }); 
+  $(document).on('click', '.update', function(){
+    var userid = $(this).attr("id");
+    var action = 'getUser';
+    $.ajax({
+      url:'action.php',
+      method:"POST",
+      data:{userid:userid, action:action},
+      dataType:"json",
+      success:function(data){
+        $('#userModal').modal('show');
+        $('#userid').val(data.id);
+        $('#firstname').val(data.first_name);
+        $('#lastname').val(data.last_name);
+        $('#email').val(data.email);
+        $('#password').val(data.password);
+        $('#passwordSection').hide();
+        if(data.gender == 'male') {
+          $('#male').prop("checked", true);
+        } else if(data.gender == 'female') {
+          $('#female').prop("checked", true);
+        }
+        if(data.status == 'active') {
+          $('#active').prop("checked", true);
+        } else if(data.gender == 'pending') {
+          $('#pending').prop("checked", true);
+        }
+        if(data.type == 'general') {
+          $('#general').prop("checked", true);
+        } else if(data.type == 'administrator') {
+          $('#administrator').prop("checked", true);
+        }
+        $('#mobile').val(data.mobile);
+        $('#designation').val(data.designation);  
+        $('.modal-title').html("<i class='fa fa-plus'></i> Edit User");
+        $('#action').val('updateUser');
+        $('#save').val('Save');
+      }
+    })
+  }); 
+  $(document).on('submit','#userForm', function(event){
+    event.preventDefault();
+    $('#save').attr('disabled','disabled');
+    var formData = $(this).serialize();
+    $.ajax({
+      url:"action.php",
+      method:"POST",
+      data:formData,
+      success:function(data){       
+        $('#userForm')[0].reset();
+        $('#userModal').modal('hide');        
+        $('#save').attr('disabled', false);
+        usersData.ajax.reload();
+      }
+    })
+  }); 
+});
+public function getUserList(){    
+  $sqlQuery = "SELECT * FROM ".$this->userTable." WHERE id !='".$_SESSION['adminUserid']."' ";
+  if(!empty($_POST["search"]["value"])){
+    $sqlQuery .= '(id LIKE "%'.$_POST["search"]["value"].'%" ';
+    $sqlQuery .= ' OR first_name LIKE "%'.$_POST["search"]["value"].'%" ';
+    $sqlQuery .= ' OR last_name LIKE "%'.$_POST["search"]["value"].'%" ';
+    $sqlQuery .= ' OR designation LIKE "%'.$_POST["search"]["value"].'%" ';
+    $sqlQuery .= ' OR status LIKE "%'.$_POST["search"]["value"].'%" ';
+    $sqlQuery .= ' OR mobile LIKE "%'.$_POST["search"]["value"].'%") ';     
+  }
+  if(!empty($_POST["order"])){
+    $sqlQuery .= 'ORDER BY '.$_POST['order']['0']['column'].' '.$_POST['order']['0']['dir'].' ';
+  } else {
+    $sqlQuery .= 'ORDER BY id DESC ';
+  }
+  if($_POST["length"] != -1){
+    $sqlQuery .= 'LIMIT ' . $_POST['start'] . ', ' . $_POST['length'];
+  } 
+  $result = mysqli_query($this->dbConnect, $sqlQuery);
+
+  $sqlQuery1 = "SELECT * FROM ".$this->userTable." WHERE id !='".$_SESSION['adminUserid']."' ";
+  $result1 = mysqli_query($this->dbConnect, $sqlQuery1);
+  $numRows = mysqli_num_rows($result1);
+
+  $userData = array();  
+  while( $users = mysqli_fetch_assoc($result) ) {   
+    $userRows = array();
+    $status = '';
+    if($users['status'] == 'active')  {
+      $status = '<span class="label label-success">Active</span>';
+    } else if($users['status'] == 'pending') {
+      $status = '<span class="label label-warning">Inactive</span>';
+    } else if($users['status'] == 'deleted') {
+      $status = '<span class="label label-danger">Deleted</span>';
+    }
+    $userRows[] = $users['id'];
+    $userRows[] = ucfirst($users['first_name']." ".$users['last_name']);
+    $userRows[] = $users['gender'];     
+    $userRows[] = $users['email'];  
+    $userRows[] = $users['mobile']; 
+    $userRows[] = $users['type'];
+    $userRows[] = $status;            
+    $userRows[] = '<button type="button" name="update" id="'.$users["id"]." class="btn btn-warning btn-xs update">Update</button>';
+    $userRows[] = '<button type="button" name="delete" id="'.$users["id"]." class="btn btn-danger btn-xs delete" >Delete</button>';
+    $userData[] = $userRows;
+  }
+  $output = array(
+    "draw"        =>  intval($_POST["draw"]),
+    "recordsTotal"    =>  $numRows,
+    "recordsFiltered"   =>  $numRows,
+    "data"          =>  $userData
+  );
+  echo json_encode($output);
+}
